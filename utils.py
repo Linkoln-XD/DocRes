@@ -24,36 +24,17 @@ def dict2string(loss_dict):
     return loss_string[:-2]
 def mkdir(dir):
     if not os.path.exists(dir):
-        os.makedirs(dir)    
-
-'''
-def convert_state_dict(state_dict):
-    """Converts a state dict saved from a dataParallel module to normal 
-       module state_dict inplace
-       :param state_dict is the loaded DataParallel model_state
-    
-    """
-    new_state_dict = OrderedDict()
-    for k, v in state_dict.items():
-        name = k[7:] # remove `module.`
-        new_state_dict[name] = v
-    return new_state_dict
-'''
-
+        os.makedirs(dir)
 
 def convert_state_dict(state_dict):
     """Converts a state dict to match the current model architecture"""
     new_state_dict = OrderedDict()
 
     for k, v in state_dict.items():
-        # Удаляем 'module.' если он есть
         if k.startswith('module.'):
             name = k[7:]
         else:
             name = k
-
-        # Исправляем имена, которые не соответствуют текущей модели
-        # Основываясь на вашей ошибке:
 
         # 1. Исправляем 'mbed.' на 'patch_embed.'
         if name.startswith('mbed.'):
@@ -70,16 +51,13 @@ def convert_state_dict(state_dict):
         # 3. Исправляем сокращенные имена
         elif name == 'ody.0.weight':
             # Нужно определить правильное имя
-            # Это может быть down1_2, down2_3 или down3_4
-            # Посмотрим на размер тензора
-            if v.shape[1] == 48:  # предполагая dim=48
+            if v.shape[1] == 48:
                 name = 'down1_2.body.0.weight'
-            elif v.shape[1] == 96:  # 48*2
+            elif v.shape[1] == 96:
                 name = 'down2_3.body.0.weight'
-            elif v.shape[1] == 192:  # 48*4
+            elif v.shape[1] == 192:
                 name = 'down3_4.body.0.weight'
 
-        # 4. Добавляем другие исправления по необходимости
 
         new_state_dict[name] = v
 

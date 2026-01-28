@@ -270,7 +270,7 @@ def get_args():
     possible_tasks = ['dewarping','deshadowing','appearance','deblurring','binarization','end2end']
     assert args.task in possible_tasks, 'Unsupported task, task must be one of '+', '.join(possible_tasks)
     return args
-######################################################
+
 def model_init(args):
     model = restormer_arch.Restormer( 
         inp_channels=6, 
@@ -286,9 +286,9 @@ def model_init(args):
     )
 
     if DEVICE.type == 'cpu':
-        state = torch.load(args.model_path, map_location='cpu')['model_state']
+        state = convert_state_dict(torch.load(args.model_path, map_location='cpu')['model_state'])
     else:
-        state = torch.load(args.model_path, map_location='cuda:0')['model_state']
+        state = convert_state_dict(torch.load(args.model_path, map_location='cuda:0')['model_state'])
     #print(state.keys())
 
     model.load_state_dict(state)
@@ -296,139 +296,6 @@ def model_init(args):
     model.eval()
     model = model.to(DEVICE)
     return model
-
-# Попытка переписать инициализацию для дебага загрузки ключей в модели
-'''
-def model_init(args):
-    """
-    Инициализация модели Restormer с загрузкой весов
-    """
-    # Подготовка модели с КОНФИГУРАЦИЕЙ ИЗ ВАШИХ ВЕСОВ
-    model = restormer_arch.Restormer(
-        inp_channels=6,  # 6 каналов как в весах!
-        out_channels=3,
-        dim=48,  # Начальная размерность
-        num_blocks=[2, 3, 3, 4],  # Конфигурация из анализа
-        num_refinement_blocks=4,  # Есть refinement блоки
-        heads=[1, 2, 4, 8],  # Из анализа temperature
-        ffn_expansion_factor=2.66,
-        bias=False,
-        LayerNorm_type='WithBias',
-        dual_pixel_task=True  # True для 6 каналов
-    )
-
-    # Загрузка весов
-    if args.model_path:
-        print(f"[INFO] Загрузка весов из: {args.model_path}")
-
-        # Загружаем checkpoint
-        if DEVICE.type == 'cpu':
-            checkpoint = torch.load(args.model_path, map_location='cpu')
-        else:
-            checkpoint = torch.load(args.model_path, map_location=f'cuda:0')
-
-        # Извлекаем state_dict (ваш формат - 'model_state')
-        if 'model_state' in checkpoint:
-            state = checkpoint['model_state']
-            print(f"[INFO] Загружен 'model_state' с {len(state)} параметрами")
-        elif 'state_dict' in checkpoint:
-            state = checkpoint['state_dict']
-            print(f"[INFO] Загружен 'state_dict' с {len(state)} параметрами")
-        elif 'model' in checkpoint:
-            state = checkpoint['model']
-            print(f"[INFO] Загружен 'model' с {len(state)} параметрами")
-        else:
-            state = checkpoint
-            print(f"[INFO] Используем весь checkpoint как state_dict ({len(state)} параметров)")
-
-        # Диагностика: проверяем первые ключи
-        print("[DEBUG] Первые 5 ключей в загруженных весах:")
-        for i, key in enumerate(list(state.keys())[:5]):
-            print(f"  {i}: {key} -> {state[key].shape if hasattr(state[key], 'shape') else type(state[key])}")
-
-        # Диагностика: сравниваем ключи модели и чекпоинта
-        model_keys = set(model.state_dict().keys())
-        state_keys = set(state.keys())
-
-        print(f"\n[DEBUG] Сравнение ключей:")
-        print(f"  Параметров в модели: {len(model_keys)}")
-        print(f"  Параметров в чекпоинте: {len(state_keys)}")
-        print(f"  Общих параметров: {len(model_keys & state_keys)}")
-        print(f"  Только в модели: {len(model_keys - state_keys)}")
-        print(f"  Только в чекпоинте: {len(state_keys - model_keys)}")
-
-        if len(state_keys - model_keys) > 0:
-            print("\n[DEBUG] Ключи в чекпоинте, но не в модели (первые 5):")
-            for key in list(state_keys - model_keys)[:5]:
-                print(f"  - {key}")
-
-        if len(model_keys - state_keys) > 0:
-            print("\n[DEBUG] Ключи в модели, но не в чекпоинте (первые 5):")
-            for key in list(model_keys - state_keys)[:5]:
-                print(f"  - {key}")
-
-        # Проверяем совпадение размеров для общих ключей
-        common_keys = model_keys & state_keys
-        mismatched_shapes = []
-
-        for key in common_keys:
-            model_shape = model.state_dict()[key].shape
-            state_shape = state[key].shape
-            if model_shape != state_shape:
-                mismatched_shapes.append((key, model_shape, state_shape))
-
-        if mismatched_shapes:
-            print(f"\n[WARNING] Найдено {len(mismatched_shapes)} несовпадений размеров:")
-            for key, model_shape, state_shape in mismatched_shapes[:5]:
-                print(f"  {key}: модель {model_shape} != чекпоинт {state_shape}")
-
-            if len(mismatched_shapes) > 5:
-                print(f"  ... и еще {len(mismatched_shapes) - 5} несовпадений")
-
-        # Загружаем веса
-        try:
-            print("\n[INFO] Загрузка весов в модель...")
-
-            # Сначала загружаем с strict=False для диагностики
-            missing_keys, unexpected_keys = model.load_state_dict(state, strict=False)
-
-            print(f"[INFO] Загрузка завершена:")
-            print(f"  Успешно загружено: {len(common_keys) - len(missing_keys)} параметров")
-            print(f"  Пропущено ключей (missing): {len(missing_keys)}")
-            print(f"  Лишних ключей (unexpected): {len(unexpected_keys)}")
-
-            if missing_keys:
-                print(f"\n[WARNING] Пропущенные ключи (первые 10):")
-                for key in missing_keys[:10]:
-                    print(f"  - {key}")
-
-            if unexpected_keys:
-                print(f"\n[WARNING] Лишние ключи (первые 10):")
-                for key in unexpected_keys[:10]:
-                    print(f"  - {key}")
-
-            # Если все ключи совпали, перезагружаем с strict=True
-            if len(missing_keys) == 0 and len(mismatched_shapes) == 0:
-                print("[INFO] Все ключи совпали, перезагружаем с strict=True")
-                model.load_state_dict(state, strict=True)
-
-        except Exception as e:
-            print(f"\n[ERROR] Ошибка при загрузке весов: {e}")
-            print("[INFO] Продолжаем со случайной инициализацией")
-
-    else:
-        print("[INFO] Веса не указаны, используем случайную инициализацию")
-
-    # Переводим модель в режим оценки и на устройство
-    model.eval()
-    model = model.to(DEVICE)
-
-    print(f"[INFO] Модель инициализирована на устройстве: {DEVICE}")
-    print(f"[INFO] Общее количество параметров: {sum(p.numel() for p in model.parameters()):,}")
-
-    return model
-'''
-
 
 def inference_one_im(model,im_path,task):
     if task=='dewarping':
