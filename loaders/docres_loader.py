@@ -298,10 +298,10 @@ class DocResTrainDataset(data.Dataset):
     def mask_augment(self,mask):
         if random.uniform(0,1) <= 0.6:
             if random.uniform(0,1) <= 0.5:
-                mask = cv2.resize(mask,(64,64))
+                mask = cv2.resize(mask,(32,32))
             else:
-                mask = cv2.resize(mask,(128,128))
-            mask = cv2.resize(mask,(64,64))
+                mask = cv2.resize(mask,(64,64))
+            mask = cv2.resize(mask,(128, 128))
         mask[mask>155] = 255
         mask[mask<=155] = 0
         return mask
