@@ -1,4 +1,6 @@
 /data/MBD/checkpoint
+/data/MBD/__pycache__
+/data/eval
 /checkpoints
 /__pycache__
 /loaders/__pycache__

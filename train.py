@@ -222,7 +222,7 @@ def train(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Hyperparams')
-    parser.add_argument('--im_size', nargs='?', type=int, default=64,
+    parser.add_argument('--im_size', nargs='?', type=int, default=128,
                         help='Height of the input image')
     parser.add_argument('--total_iter', nargs='?', type=int, default=100000, 
                         help='# of the epochs')

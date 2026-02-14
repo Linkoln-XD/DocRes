@@ -1,4 +1,6 @@
-import os 
+import os
+from tkinter.messagebox import RETRY
+
 import cv2 
 import glob
 import utils
@@ -6,6 +8,8 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from skimage.metrics import structural_similarity,peak_signal_noise_ratio
+
+import piq # For MS-SSIM
 
 import torch
 
@@ -313,6 +317,51 @@ def inference_one_im(model,im_path,task):
 
     return prompt1,prompt2,prompt3,restorted
 
+'''
+
+    Фукнции для вычисления AD и LD для каждой пары изображений
+
+'''
+
+def get_align_distortion(pred, gt):
+
+    pred_gray = cv2.cvtColor(pred, cv2.COLOR_BGR2GRAY)
+    gt_gray = cv2.cvtColor(gt, cv2.COLOR_BGR2GRAY)
+
+    pred_corners = cv2.goodFeaturesToTrack(pred_gray, 100, 0.01, 10)
+    gt_corners = cv2.goodFeaturesToTrack(gt_gray, 100, 0.01, 10)
+
+    if pred_corners is None or gt_corners is None:
+        return 0.0
+
+    pred_corners = pred_corners.reshape(-1, 2)
+    gt_corners = gt_corners.reshape(-1, 2)
+
+    corners_dist = 0
+
+    count = min(len(pred_corners), len(gt_corners))
+    for i in range(count):
+        corners_dist += np.linalg.norm(pred_corners[i] - gt_corners[i])
+
+    return corners_dist / count if count > 0 else 0.0
+
+def get_local_distortion(pred, gt):
+
+    pred_gray = cv2.cvtColor(pred, cv2.COLOR_BGR2GRAY)
+    gt_gray = cv2.cvtColor(gt, cv2.COLOR_BGR2GRAY)
+
+    pred_dx = cv2.Sobel(pred_gray, cv2.CV_64F, 1, 0, ksize=3)
+    pred_dy = cv2.Sobel(pred_gray, cv2.CV_64F, 0, 1, ksize=3)
+
+    gt_dx = cv2.Sobel(gt_gray, cv2.CV_64F, 1, 0, ksize=3)
+    gt_dy = cv2.Sobel(gt_gray, cv2.CV_64F, 0, 1, ksize=3)
+
+    ddx = np.abs(pred_dx - gt_dx)
+    ddy = np.abs(pred_dy - gt_dy)
+
+    dist = np.mean(np.sqrt(ddx**2 + ddy**2))
+
+    return dist
 
 
 if __name__ == '__main__':
@@ -334,7 +383,32 @@ if __name__ == '__main__':
     ## obtain metric
     print('Metric calculating')
     if task == 'dewarping':
-        exit()
+        psnr_ = []
+        ms_ssim_ = []
+        ad_ = []
+        ld_ = []
+
+        for im_path in tqdm(im_paths):
+            pred = cv2.imread(im_path.replace('_in', '_docres'))
+            gt = cv2.imread(im_path.replace('_in', '_gt'))
+
+            if pred.shape != gt.shape:
+                pred = cv2.resize(pred, (gt.shape[1], gt.shape[0]))
+
+            psnr_.append(peak_signal_noise_ratio(pred, gt))
+
+            pred_tensor = torch.from_numpy(pred.transpose(2, 0, 1)).unsqueeze(0).float() / 255.0
+            gt_tensor = torch.from_numpy(gt.transpose(2, 0, 1)).unsqueeze(0).float() / 255.0
+            ms_ssim_.append(piq.multi_scale_ssim(pred_tensor, gt_tensor, data_range=1.).item())
+
+            ad_.append(get_align_distortion(pred, gt))
+            ld_.append(get_local_distortion(pred, gt))
+
+        print(args.dataset)
+        print(f'psnr: {np.mean(psnr_):.4f}')
+        print(f'ms-ssim: {np.mean(ms_ssim_):.4f}')
+        print(f'ad: {np.mean(ad_):.4f}')
+        print(f'ld: {np.mean(ld_):.4f}')
     elif task=='deshadowing' or task=='appearance' or task=='deblurring':
         psnr = []
         ssim = []

@@ -73,8 +73,14 @@ def net1_net2_infer_single_im(img,model_path):
                     sync_bn=None,
                     freeze_bn=False)
     seg_model = torch.nn.DataParallel(seg_model, device_ids=range(torch.cuda.device_count()))
-    seg_model.cuda()
-    checkpoint = torch.load(model_path)
+    #seg_model.cuda()
+
+    if torch.cuda.is_available():
+        seg_model.cuda()
+    else:
+        seg_model.to('cpu')
+
+    checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
     seg_model.load_state_dict(checkpoint['model_state'])
     ### validate on the real datasets
     seg_model.eval()
@@ -90,7 +96,13 @@ def net1_net2_infer_single_im(img,model_path):
         # from torchtoolbox.tools import summary
         # print(summary(seg_model,torch.rand((1, 3, 448, 448)).cuda())) 59.4M 135.6G
 
-        pred = seg_model(img.cuda())
+        #pred = seg_model(img.cuda())
+
+        if torch.cuda.is_available():
+            pred = seg_model(img.cuda())
+        else:
+            pred = seg_model(img)
+
         mask_pred = pred[:,0,:,:].unsqueeze(1)
         mask_pred = F.interpolate(mask_pred,(h_org,w_org))
         mask_pred = mask_pred.squeeze(0).squeeze(0).cpu().numpy()
